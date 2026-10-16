@@ -235,14 +235,21 @@ local VIEWS = {
     end,
     cells = function(row)
       return itemCell(row) .. (row.units and (" x" .. row.units) or ""), Codec.Money(row.min), Codec.Money(row.sell),
-        Codec.Money(row.total), row.kind == "vendor" and "Vendor" or "Auction"
+        Codec.Money(row.total), row.kind == "vendor" and (row.confirmed and "Vendor" or "Vendor?") or "Auction"
     end,
-    status = function(_, count)
+    status = function(rows, count)
       local scanned = ns.db.scanned[ns.RealmKey()]
       if not scanned then
         return "Scan the auction house to find deals."
       end
-      return count("deal") .. " in the scan of " .. Codec.Age(time() - scanned) .. ". Click one to search for it."
+      local unconfirmed = ""
+      for _, row in ipairs(rows) do
+        if row.kind == "vendor" and not row.confirmed then
+          unconfirmed = " Vendor? prices are unconfirmed."
+          break
+        end
+      end
+      return count("deal") .. " in the scan of " .. Codec.Age(time() - scanned) .. ". Click one to search for it." .. unconfirmed
     end,
   },
   sell = {

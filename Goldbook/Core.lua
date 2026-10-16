@@ -298,6 +298,17 @@ local function bookVendorSales(opened)
   end
 end
 
+-- What the open merchant sells without limit, for gold alone.
+local function recordMerchantGoods()
+  for index = 1, GetMerchantNumItems() do
+    local _, _, price, count, available = GetMerchantItemInfo(index)
+    local itemID = GetMerchantItemID(index)
+    if itemID and price and price > 0 and available == -1 and GetMerchantItemCostInfo(index) == 0 then
+      Database.SetMerchantPrice(ns.db, itemID, math.max(count or 1, 1), price)
+    end
+  end
+end
+
 local function recordBank()
   ns.db.bank[characterKey()] = { at = time(), items = heldItems(BANK) }
 end
@@ -363,8 +374,10 @@ frame:SetScript("OnEvent", function(_, event, first, second)
   elseif event == "MERCHANT_SHOW" then
     vendorSales = 0
     bookVendorSales(true)
+    recordMerchantGoods()
   elseif event == "MERCHANT_UPDATE" then
     bookVendorSales(false)
+    recordMerchantGoods()
   elseif event == "MERCHANT_CLOSED" then
     bookVendorSales(false)
     if vendorSales > 0 then

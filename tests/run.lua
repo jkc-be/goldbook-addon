@@ -122,6 +122,37 @@ eq(Advisor.PostPrice(record({ min = 30, days = { 100, 100, 100, 30 } }), 0, NOW)
 eq(Advisor.PostPrice(record({ min = 500, days = { 100, 100, 100, 500 } }), 0, NOW), 200, "do not post above twice the usual price")
 eq(Advisor.PostPrice(record({ min = 80, seen = NOW - 60, mv = 120, mvAt = NOW - 60 }), 0, NOW), 120, "post at the market value when nobody is listing")
 
+eq(Advisor.Deal(record({ min = 60, days = { 100, 110, 90, 60 } }), 0, NOW, true), nil, "what merchants sell is no flip")
+local stockedVendor = Advisor.Deal(record({ min = 40, days = { 100, 110, 90, 40 } }), 55, NOW, true)
+eq(stockedVendor.kind .. " " .. stockedVendor.sell, "vendor 55", "what merchants sell is still a vendor deal")
+
+local shop = Database.Init(nil)
+eq(tostring(Database.MerchantSells(shop, "3857")) .. " " .. tostring(Database.MerchantPrice(shop, "3857")), "true nil",
+  "coal is known to be sold by merchants before one is seen")
+eq(Database.MerchantSells(shop, "2589"), false, "linen cloth is not")
+Database.SetMerchantPrice(shop, 2589, 5, 98)
+Database.SetMerchantPrice(shop, 2589, 1, 25)
+eq(tostring(Database.MerchantSells(shop, "2589:584")) .. " " .. Database.MerchantPrice(shop, "2589"), "true 20",
+  "a merchant seen selling an item keeps its lowest price per unit")
+shop.vendor[2865] = 962
+Database.SetVendorPaid(shop, "2865", 2, 1154)
+eq(Database.Vendor(shop, "2865"), 577, "what a vendor paid outranks the item's data")
+local sold = Database.Init({ vendor = { [2865] = 962 }, trades = { A = { { side = "vendor", key = "2865", count = 3, price = 1731 } } } })
+eq(Database.Vendor(sold, "2865"), 577, "vendor sales booked earlier say what a vendor pays")
+shop.scanned.R = NOW
+shop.prices.R = {
+  ["3857"] = Codec.EncodePrice(record({ min = 2000, days = { 3000, 3000, 3000, 2000 } })),
+  ["2592"] = Codec.EncodePrice(record({ min = 2000, days = { 3000, 3000, 3000, 2000 } })),
+}
+shop.vendor[3857] = 125
+local found = {}
+for index, item in ipairs(Advisor.Deals(shop, "R", 0)) do
+  found[index] = item.key .. " " .. item.kind
+end
+eq(table.concat(found, ", "), "2592 flip", "the deals leave out flips of what merchants sell")
+local coal = Advisor.Sell(shop, "R", { { key = "3857", count = 10 } })[1]
+eq(coal.action .. " " .. tostring(coal.post) .. " " .. coal.value, "vendor nil 1250", "what merchants sell is worth what a vendor pays")
+
 local books = Database.Init(nil)
 local DAY, HOUR = 86400, 3600
 -- A character's gold as "hour:copper", oldest first.
@@ -579,6 +610,19 @@ GameTooltip.lines, GameTooltip.itemLink = {}, "|Hitem:4306::::::|h[Silk Cloth]|h
 Stub.tooltipCalls[1](GameTooltip)
 eq(plain(table.concat(GameTooltip.lines, " / ")), "  / Goldbook =  /   Vendor = 1s 50c", "tooltip of an unscanned item shows the vendor price")
 
+ns.db.merchant[2589], ns.db.vendorPaid[2589] = 50, 10
+GameTooltip.lines, GameTooltip.itemLink = {}, cloth
+Stub.tooltipCalls[1](GameTooltip)
+eq(plain(table.concat(GameTooltip.lines, " / ")),
+  "  / Goldbook = 100 listed, seen 3m ago /   Min buyout = 1s 0c /   Market value = 1s 5c /   Vendor = 10c /   Merchant sells = 50c /   Alt+click: price history",
+  "tooltip of what merchants sell shows their price, what a vendor paid, and no price to post at")
+ns.db.merchant[2589], ns.db.vendorPaid[2589] = nil, nil
+GameTooltip.lines, GameTooltip.itemLink = {}, "|Hitem:3857::::::|h[Coal]|h"
+Stub.items[3857] = { name = "Coal", quality = 1, vendor = 125, cached = true }
+Stub.tooltipCalls[1](GameTooltip)
+eq(plain(table.concat(GameTooltip.lines, " / ")), "  / Goldbook =  /   Vendor = 1s 25c /   Sold by merchants", "tooltip of known merchant goods says so without a price")
+Stub.items[3857] = nil
+
 local function cells(index)
   local texts = {}
   for column, cell in ipairs(GoldbookWindow.rows[index].cells) do
@@ -657,8 +701,15 @@ eq(GoldbookWindow.search.hint.shown, false, "the hint goes when the box is click
 GoldbookWindow.search.scripts.OnEditFocusLost(GoldbookWindow.search)
 eq(GoldbookWindow.search.hint.shown, true, "the hint comes back when the box is left empty")
 eq(GoldbookWindow.headers[2].text, "Buy from", "deals view has its own columns")
-eq(cells(1), "Elemental Water x3 | 3s 34c | 4s 0c | 1s 98c | Vendor", "deals view lists the vendor deal with its units and total profit")
-eq(GoldbookWindow.status.text, "1 deal in the scan of 3m ago. Click one to search for it.", "deals status")
+eq(cells(1), "Elemental Water x3 | 3s 34c | 4s 0c | 1s 98c | Vendor?", "deals view lists the vendor deal with its units and total profit")
+eq(GoldbookWindow.status.text, "1 deal in the scan of 3m ago. Click one to search for it. Vendor? prices are unconfirmed.",
+  "deals status says the item's own vendor price is not confirmed")
+GoldbookDB.vendorPaid[7070] = 400
+SlashCmdList.GOLDBOOK("deals")
+eq(cells(1) .. " / " .. GoldbookWindow.status.text, "Elemental Water x3 | 3s 34c | 4s 0c | 1s 98c | Vendor / 1 deal in the scan of 3m ago. Click one to search for it.",
+  "a vendor price seen paid is confirmed")
+GoldbookDB.vendorPaid[7070] = nil
+SlashCmdList.GOLDBOOK("deals")
 
 local firstRow = GoldbookWindow.rows[1].hit
 firstRow.scripts.OnEnter(firstRow)

@@ -19,7 +19,10 @@ local PARK_MILLER = 2147483647
 --   history[realmKey][itemKey] = the item's prices per day for KEPT_DAYS, see Codec.HistoryDay
 --   scanned[realmKey]          = time of the newest scan
 --   items[itemKey]             = "quality|name"
---   vendor[itemID]             = what a vendor pays, 0 when it buys nothing
+--   vendor[itemID]             = what the item's data says a vendor pays, 0 when it buys nothing
+--   vendorPaid[itemID]         = what a vendor paid for one, read from the buyback list, which outranks
+--                                the item's data: that is wrong for some items
+--   merchant[itemID]           = the lowest gold price a merchant asks for one it sells without limit
 --   gold[character][hour]      = gold at the end of that hour of unix time, see Ledger
 --   characters[character]      = { name, realm, faction, class, level, at, bags = { at, rows }, bank = { at, rows } }
 --                                  saved at logout for the sync agent, rows as Advisor.Sell gives them, no bank
@@ -87,6 +90,19 @@ local function upgradeFromSchema3(db, now)
   end
 end
 
+-- Vendor sales booked before vendorPaid existed, or while the buyback list
+-- was not read, say what a vendor paid too.
+local function vendorPaidFromTrades(db)
+  for _, booked in pairs(db.trades) do
+    for _, trade in ipairs(booked) do
+      local itemID = trade.side == "vendor" and trade.key and Codec.BaseID(trade.key)
+      if itemID and not db.vendorPaid[itemID] then
+        db.vendorPaid[itemID] = math.floor(trade.price / trade.count)
+      end
+    end
+  end
+end
+
 -- A random source for Codec.RandomCode. The client gives addons only
 -- math.random, which may be seeded from the clock in seconds, so two accounts
 -- made in the same second could get the same codes. A Park-Miller stream
@@ -126,6 +142,8 @@ function Database.Init(saved)
   db.scanned = db.scanned or {}
   db.items = db.items or {}
   db.vendor = db.vendor or {}
+  db.vendorPaid = db.vendorPaid or {}
+  db.merchant = db.merchant or {}
   db.gold = db.gold or {}
   db.scans = db.scans or {}
   db.sellerScans = db.sellerScans or {}
@@ -134,6 +152,7 @@ function Database.Init(saved)
   db.bank = db.bank or {}
   db.trades = db.trades or {}
   db.account = db.account or newAccount()
+  vendorPaidFromTrades(db)
   return db
 end
 
@@ -160,7 +179,52 @@ function Database.Item(db, key)
 end
 
 function Database.Vendor(db, key)
-  return db.vendor[Codec.BaseID(key)]
+  local itemID = Codec.BaseID(key)
+  return db.vendorPaid[itemID] or db.vendor[itemID]
+end
+
+-- Whether Database.Vendor is what a vendor was seen paying, not the item's data.
+function Database.VendorSeen(db, key)
+  return db.vendorPaid[Codec.BaseID(key)] ~= nil
+end
+
+-- `price` is what the vendor paid for `count` of the item.
+function Database.SetVendorPaid(db, key, count, price)
+  db.vendorPaid[Codec.BaseID(key)] = math.floor(price / count)
+end
+
+-- Goods merchants sell without limit, known before a merchant selling them
+-- was visited: drinks, spices, thread, vials, flux, dyes, trade supplies,
+-- class reagents and fishing supplies.
+local MERCHANT_GOODS = {}
+for _, itemID in ipairs({
+  159, 1179, 2678, 2692, 3713, 4289,
+  2320, 2321, 4291, 8343, 14341,
+  3371, 3372, 8925,
+  2880, 3466, 3857, 4470, 4471, 6217,
+  2324, 2604, 2605, 4340, 4341, 4342, 6260,
+  5140, 17020, 17026, 17029, 17030, 17031, 17034, 17035, 17036, 17037, 17038, 17056,
+  6256, 6529, 6530,
+}) do
+  MERCHANT_GOODS[itemID] = true
+end
+
+-- A merchant selling `count` for `price` without limit.
+function Database.SetMerchantPrice(db, itemID, count, price)
+  local each = math.ceil(price / count)
+  db.merchant[itemID] = math.min(db.merchant[itemID] or each, each)
+end
+
+-- What a merchant asks for one, once a merchant selling it was seen.
+function Database.MerchantPrice(db, key)
+  return db.merchant[Codec.BaseID(key)]
+end
+
+-- Whether anyone can buy the item from a merchant in any amount. Its listings
+-- on the auction house then sell only to buyers who do not know that.
+function Database.MerchantSells(db, key)
+  local itemID = Codec.BaseID(key)
+  return db.merchant[itemID] ~= nil or MERCHANT_GOODS[itemID] == true
 end
 
 function Database.Lookup(db, realmKey, key)

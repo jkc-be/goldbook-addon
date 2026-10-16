@@ -154,6 +154,23 @@ end
 function GetBuybackItemLink(index)
   return buyback[index][4]
 end
+-- The open merchant's goods: { itemID, price, count, available, costs },
+-- `available` being -1 without limit and `costs` how many items or
+-- currencies it asks besides gold.
+local goods = {}
+function GetMerchantNumItems()
+  return #goods
+end
+function GetMerchantItemInfo(index)
+  local entry = goods[index]
+  return "Goods", nil, entry[2], entry[3], entry[4], true, true, entry[5] > 0
+end
+function GetMerchantItemID(index)
+  return goods[index][1]
+end
+function GetMerchantItemCostInfo(index)
+  return goods[index][5]
+end
 local star = "|Hitem:15301:0:0:0:0:0:1019:0:60|h[Jagged Star of the Eagle]|h"
 local function vendored()
   local texts = {}
@@ -175,6 +192,7 @@ Stub.money = Stub.money + 3100
 Stub.fire("MERCHANT_UPDATE")
 Stub.fire("MERCHANT_UPDATE")
 eq(vendored(), "Jagged Star of the Eagle 15301:1019 1 3100 0 0", "a new buyback entry is a vendor sale, booked once, keyed by its link")
+eq(ns.Database.Vendor(ns.db, "15301"), 3100, "the buyback list tells what a vendor pays")
 buyback[3] = { "Broken Fang", 1, 85 }
 buyback[4] = { "Broken Fang", 1, 85 }
 Stub.fire("MERCHANT_UPDATE")
@@ -204,6 +222,21 @@ Stub.money = Stub.money + 55
 Stub.fire("MERCHANT_UPDATE")
 eq(select(2, vendored():gsub("Ruined Pelt", "")), 1, "with the list full, a sale unlike the oldest entry is seen as usual")
 Stub.fire("MERCHANT_CLOSED")
+
+goods = { { 3857, 500, 1, -1, 0 }, { 2512, 10, 200, -1, 0 }, { 6325, 400, 1, 2, 0 }, { 18839, 900, 1, -1, 1 } }
+Stub.fire("MERCHANT_SHOW")
+goods = { { 3857, 475, 1, -1, 0 } }
+Stub.fire("MERCHANT_UPDATE")
+goods = { { 3857, 500, 1, -1, 0 } }
+Stub.fire("MERCHANT_SHOW")
+Stub.fire("MERCHANT_CLOSED")
+local stock = {}
+for _, itemID in ipairs({ 3857, 2512, 6325, 18839 }) do
+  stock[#stock + 1] = itemID .. "=" .. tostring(ns.db.merchant[itemID])
+end
+eq(table.concat(stock, " "), "3857=475 2512=1 6325=nil 18839=nil",
+  "merchants' goods without limit and for gold alone are kept at their lowest price per unit")
+goods = {}
 
 SlashCmdList.GOLDBOOK("trades jagged")
 eq(cells(1), "Jagged Star of the Eagle x1  vendor | 31s 0c | +31s 0c | Mirelle | just now", "a vendor sale is marked and nets what the vendor paid")

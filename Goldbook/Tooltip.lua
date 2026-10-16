@@ -21,7 +21,8 @@ local function addPrices(tooltip, link)
     return
   end
   local record = Database.Lookup(ns.db, realmKey, key)
-  local vendor = select(11, C_Item.GetItemInfo(link)) or 0
+  local vendor = Database.Vendor(ns.db, key) or select(11, C_Item.GetItemInfo(link)) or 0
+  local stocked = Database.MerchantSells(ns.db, key)
   if not record and vendor == 0 then
     return
   end
@@ -47,13 +48,23 @@ local function addPrices(tooltip, link)
     if usual then
       row("Usual over " .. #record.days .. " days", usual)
     end
-    row("Post at", Advisor.PostPrice(record, vendor, ns.db.scanned[realmKey]))
+    if not stocked then
+      row("Post at", Advisor.PostPrice(record, vendor, ns.db.scanned[realmKey]))
+    end
   end
   if vendor > 0 then
     row("Vendor", vendor)
   end
+  if stocked then
+    local price = Database.MerchantPrice(ns.db, key)
+    if price then
+      row("Merchant sells", price)
+    else
+      tooltip:AddLine("  Sold by merchants", 0.6, 0.6, 0.6)
+    end
+  end
 
-  local deal = record and Advisor.Deal(record, vendor, ns.db.scanned[realmKey])
+  local deal = record and Advisor.Deal(record, vendor, ns.db.scanned[realmKey], stocked)
   if deal then
     local target = deal.kind == "vendor" and "a vendor pays " or "resells for "
     local scope = deal.units and (" on " .. deal.units .. (deal.units == 1 and " unit" or " units")) or " each"

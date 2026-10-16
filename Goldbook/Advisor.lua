@@ -69,8 +69,10 @@ end
 
 -- A deal is something listed right now that sells for more: to a vendor,
 -- which is certain, or on the auction house at its usual price. Of the two
--- the one that makes more is returned.
-function Advisor.Deal(record, vendor, newestScan)
+-- the one that makes more is returned. What merchants sell (`stocked`) is
+-- only a deal to vendor: its usual auction price is paid only by buyers who
+-- do not know a merchant has it.
+function Advisor.Deal(record, vendor, newestScan, stocked)
   if record.seen ~= newestScan then
     return nil
   end
@@ -78,7 +80,7 @@ function Advisor.Deal(record, vendor, newestScan)
   if vendor and vendor > record.min then
     best = deal("vendor", record, vendor, vendor, vendor - 1)
   end
-  local resale = resaleValue(record)
+  local resale = not stocked and resaleValue(record)
   if resale and record.min <= resale * DEAL_RATIO then
     local flip = deal("flip", record, resale, Advisor.Proceeds(resale), resale * DEAL_RATIO)
     if not best or flip.total > best.total then
@@ -89,13 +91,15 @@ function Advisor.Deal(record, vendor, newestScan)
 end
 
 -- Vendor deals always count; a flip must make `minProfit` in total.
+-- `confirmed` marks a vendor deal whose price a vendor was seen paying.
 function Advisor.Deals(db, realmKey, minProfit)
   local newestScan = db.scanned[realmKey]
   local deals = {}
   for _, item in ipairs(Database.Items(db, realmKey)) do
-    local found = Advisor.Deal(item, Database.Vendor(db, item.key), newestScan)
+    local found = Advisor.Deal(item, Database.Vendor(db, item.key), newestScan, Database.MerchantSells(db, item.key))
     if found and (found.kind == "vendor" or found.total >= minProfit) then
       item.kind, item.sell, item.total, item.units = found.kind, found.sell, found.total, found.units
+      item.confirmed = found.kind == "vendor" and Database.VendorSeen(db, item.key)
       deals[#deals + 1] = item
     end
   end
@@ -198,7 +202,8 @@ end
 
 -- bag = { { key, count }, ... }. Says for each item whether to auction it or
 -- vendor it, and what that brings in. An item whose lowest listing already
--- pays less than a vendor goes to the vendor.
+-- pays less than a vendor goes to the vendor, and so does one that merchants
+-- sell, which no informed buyer pays the auction price for.
 function Advisor.Sell(db, realmKey, bag)
   local newestScan = db.scanned[realmKey]
   local rows, total = {}, 0
@@ -208,7 +213,8 @@ function Advisor.Sell(db, realmKey, bag)
     local name, quality = Database.Item(db, held.key)
     local row = { key = held.key, name = name or ("item " .. held.key), quality = quality or 1, count = held.count, vendor = vendor }
     local underVendor = record and record.seen == newestScan and Advisor.Proceeds(record.min) <= vendor
-    local post = record and not underVendor and Advisor.PostPrice(record, vendor, newestScan)
+    local stocked = Database.MerchantSells(db, held.key)
+    local post = record and not underVendor and not stocked and Advisor.PostPrice(record, vendor, newestScan)
     if post and Advisor.Proceeds(post) > vendor then
       row.action, row.post, row.value = "auction", post, Advisor.Proceeds(post) * held.count
     elseif vendor > 0 then
