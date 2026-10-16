@@ -2,7 +2,8 @@ local _, ns = ...
 local AH = C_AuctionHouse
 local frame = CreateFrame("Frame")
 local pending = {}
-local MAX_ITEMS, MAX_OFFERS = 500, 50000
+local MAX_SNAPSHOTS, MAX_OFFERS = 500, 50000
+local MAX_SAVED_OFFERS = 200000
 local MAX_AGE = 14 * 24 * 3600
 
 local function offer(result, commodity)
@@ -64,18 +65,33 @@ local function capture(item, commodity)
     scannedAt = time(), offers = offers,
   }
   local saved = ns.db.sellerScans
-  saved[identity.realm .. "|" .. identity.faction .. "|" .. key] = snapshot
+  local id = identity.realm .. "|" .. identity.faction .. "|" .. key .. "|" .. snapshot.scannedAt
+  -- Keep distinct observations made in the same second as well.
+  local suffix = 0
+  local base = id
+  while saved[id] do
+    suffix = suffix + 1
+    id = base .. "|" .. string.format("%06d", suffix)
+  end
+  saved[id] = snapshot
   local kept = {}
   for id, scan in pairs(saved) do
     if time() - scan.scannedAt > MAX_AGE then
       saved[id] = nil
     else
-      kept[#kept + 1] = { id = id, at = scan.scannedAt }
+      kept[#kept + 1] = { id = id, at = scan.scannedAt, offers = #scan.offers }
     end
   end
-  table.sort(kept, function(a, b) return a.at > b.at end)
-  for index = MAX_ITEMS + 1, #kept do
-    saved[kept[index].id] = nil
+  table.sort(kept, function(a, b)
+    if a.at == b.at then return a.id > b.id end
+    return a.at > b.at
+  end)
+  local totalOffers = 0
+  for index, entry in ipairs(kept) do
+    totalOffers = totalOffers + entry.offers
+    if index > MAX_SNAPSHOTS or totalOffers > MAX_SAVED_OFFERS then
+      saved[entry.id] = nil
+    end
   end
 end
 
