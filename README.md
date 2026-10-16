@@ -4,6 +4,11 @@ A World of Warcraft addon that scans the auction house, shows prices in item
 tooltips and a searchable window, finds deals, advises what to sell, and keeps
 a ledger of your gold and trades.
 
+With the Goldbook app, the addon syncs with the
+[Goldbook website](https://app.jkc-be.com/goldbook/): a price history for
+every item, and your characters' gold, bags, bank and trades. Get the app from
+the website's [Download](https://app.jkc-be.com/goldbook/#download) page.
+
 This repository holds the addon only. It is a read-only copy of the addon
 folder of a private repository, and every update overwrites it. The Goldbook
 desktop app and server are not part of it.
@@ -16,6 +21,12 @@ version the game lists it as out of date.
 
 ## Install
 
+The easiest way is the Goldbook app from the
+[Download](https://app.jkc-be.com/goldbook/#download) page. It installs the
+addon, keeps it up to date, and syncs it with the website.
+
+To install the addon by hand:
+
 1. Quit the game. The game only looks for new addons when it starts.
 2. Copy the `Goldbook` folder into `Interface/AddOns` of your game flavor, for
    example `World of Warcraft/_classic_/Interface/AddOns/Goldbook`. The folder
@@ -25,11 +36,25 @@ version the game lists it as out of date.
 When you log in, chat says `Goldbook loaded. Type /gb for commands.` and a gold
 coin button sits on the edge of the minimap.
 
-The addon works on its own. An addon cannot open network connections, so it
-queues each scan in its `SavedVariables` file, which the game writes on
-`/reload` and on logout. The Goldbook desktop app reads that file and uploads
-the scans to the Goldbook website for a shared price history. The address the
-addon shows under `/gb web` is `X-Website` in `Goldbook.toc`.
+## Sync with the website
+
+The addon works on its own, but an addon cannot open network connections. It
+queues each scan, and each character's gold, bags and bank, in its
+`SavedVariables` file, which the game writes on `/reload` and on logout. The
+Goldbook app watches that file and uploads it to the
+[Goldbook website](https://app.jkc-be.com/goldbook/).
+
+1. Install the app from the [Download](https://app.jkc-be.com/goldbook/#download)
+   page and leave it running.
+2. Scan in the auction house, then type `/reload`. The app uploads the scan a
+   few seconds later.
+3. On the website, **Prices** shows the price history of every item. To see
+   your characters, type `/gb web` in game and log in under **Characters** with
+   the ID and key it shows.
+
+The app uploads only a hash of the key. Anyone with the ID and the key sees
+the gold, bags and bank of your characters, so keep the key to yourself. The
+address `/gb web` shows is `X-Website` in `Goldbook.toc`.
 
 ## Use
 
