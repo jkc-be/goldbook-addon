@@ -326,7 +326,7 @@ function C_AuctionHouse.GetReplicateItemInfo(index)
   local auction = ah.replicate[index + 1]
   local loaded = Stub.clock >= (auction.loadsAt or 0)
   return nil, nil, auction.count, auction.quality or 1, nil, 0, nil, auction.bid or 0, 0, auction.buyout, 0, nil, nil,
-    nil, nil, 0, auction.itemID, loaded
+    auction.owner, auction.ownerFullName, 0, auction.itemID, loaded
 end
 function C_AuctionHouse.GetReplicateItemLink(index)
   local auction = ah.replicate[index + 1]

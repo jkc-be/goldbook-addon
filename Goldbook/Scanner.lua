@@ -79,6 +79,8 @@ local function finish(rows, names)
   scan.names = names
   scan.skipped = job.skipped or 0
   scan.samples = job.samples
+  scan.orderBooks = job.mode == "replicate" and job.listings or nil
+  scan.incompleteItems = job.incompleteItems
   stop()
   notify("done", scan)
 end
@@ -247,7 +249,7 @@ MODES.browse = {
   },
 }
 
-local function addListing(key, name, quality, buyout, count)
+local function addListing(key, name, quality, buyout, count, owner)
   local listings = job.listings[key]
   if not listings then
     listings = {}
@@ -256,7 +258,7 @@ local function addListing(key, name, quality, buyout, count)
       job.names[key] = { name = name, quality = quality }
     end
   end
-  listings[#listings + 1] = { price = math.ceil(buyout / count), count = count }
+  listings[#listings + 1] = { price = math.ceil(buyout / count), count = count, owner = owner }
 end
 
 -- A listing of a random-suffix variant whose suffix could not be read is
@@ -264,7 +266,8 @@ end
 -- A few such links are kept so the link format can be checked.
 local SAMPLES = 5
 
-local function skip(link)
+local function skip(link, itemID)
+  job.incompleteItems[itemID] = true
   job.skipped = job.skipped + 1
   if link and #job.samples < SAMPLES then
     job.samples[#job.samples + 1] = link
@@ -291,17 +294,18 @@ end
 -- variant apart, has not loaded. With `final` a listing without a link falls
 -- back to its bare item id, unless the item is known to come in variants.
 local function readListing(index, final)
-  local _, _, count, quality, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID, hasAllInfo =
+  local _, _, count, quality, _, _, _, _, _, buyout, _, _, _, owner, ownerFullName, _, itemID, hasAllInfo =
     C_AuctionHouse.GetReplicateItemInfo(index)
   if not itemID or itemID == 0 or count == 0 or buyout == 0 then
     return true
   end
+  owner = ownerFullName and ownerFullName ~= "" and ownerFullName or owner
   local link = hasAllInfo and C_AuctionHouse.GetReplicateItemLink(index)
   if link then
     local key = Codec.KeyFromLink(link, job.suffixes[itemID]) or Codec.ItemKey(itemID)
     local name = link:match("%[(.-)%]")
     if key:find(":") then
-      addListing(key, name, quality, buyout, count)
+      addListing(key, name, quality, buyout, count, owner)
       return true
     end
     -- Named unlike its base item, the listing is a variant whose suffix
@@ -311,17 +315,17 @@ local function readListing(index, final)
       return false, itemID
     end
     if baseName and name == baseName then
-      addListing(key, name, quality, buyout, count)
+      addListing(key, name, quality, buyout, count, owner)
     else
-      skip(link)
+      skip(link, itemID)
     end
     return true
   end
   if final then
     if job.suffixes[itemID] then
-      skip(nil)
+      skip(nil, itemID)
     else
-      addListing(Codec.ItemKey(itemID), nil, nil, buyout, count)
+      addListing(Codec.ItemKey(itemID), nil, nil, buyout, count, owner)
     end
     return true
   end
@@ -405,6 +409,7 @@ MODES.replicate = {
   start = function()
     job.listings, job.names, job.pending = {}, {}, {}
     job.suffixes, job.skipped, job.samples = knownSuffixes(), 0, {}
+    job.incompleteItems = {}
     C_AuctionHouse.ReplicateItems()
   end,
   on = {

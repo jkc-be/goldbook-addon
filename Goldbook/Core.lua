@@ -119,6 +119,12 @@ local function announce(scan, unnamed)
   local deals = Advisor.Deals(ns.db, ns.RealmKey(), ns.MinProfit())
   local missing = unnamed > 0 and (", " .. unnamed .. " still unnamed") or ""
   ns.Print(#scan.rows .. " items scanned" .. missing .. ". Type /reload or log out to hand the scan to Goldbook.")
+  if scan.bookCount then
+    ns.Print(scan.bookCount .. " order books recorded. Keep the desktop app open and type /reload to upload them.")
+    if scan.bookSkipped > 0 then
+      ns.Print(scan.bookSkipped .. " order books were incomplete or too large and were not saved.")
+    end
+  end
   if scan.skipped > 0 then
     ns.Print("Left out " .. scan.skipped .. " listings of item variants it could not tell apart. A quick scan first helps.")
   end
@@ -244,6 +250,9 @@ local COMMANDS = {
     end
     local last = ns.db.scans[#ns.db.scans]
     ns.Print("Version " .. ns.VERSION .. ". " .. known .. " items priced on " .. ns.RealmKey() .. ", " .. #ns.db.scans .. " scans queued for sync.")
+    local books = 0
+    for _ in pairs(ns.db.sellerScans) do books = books + 1 end
+    ns.Print(books .. " order book snapshots saved locally. Type /reload with the desktop app open to sync.")
     if last then
       ns.Print("Last scan " .. Codec.Age(time() - last.at) .. " (" .. last.count .. " items).")
     end

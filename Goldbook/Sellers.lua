@@ -2,7 +2,7 @@ local _, ns = ...
 local AH = C_AuctionHouse
 local frame = CreateFrame("Frame")
 local pending = {}
-local MAX_SNAPSHOTS, MAX_OFFERS = 500, 50000
+local MAX_SNAPSHOTS, MAX_OFFERS = 10000, 50000
 local MAX_SAVED_OFFERS = 200000
 local MAX_AGE = 14 * 24 * 3600
 
@@ -30,6 +30,41 @@ local function offer(result, commodity)
     owners = owners,
     totalOwners = math.max(result.totalNumberOfOwners or 0, #owners),
   }
+end
+
+local function saveSnapshot(snapshot)
+  local saved = ns.db.sellerScans
+  local id = snapshot.realm .. "|" .. snapshot.faction .. "|" .. snapshot.itemKey .. "|" .. snapshot.scannedAt
+  local suffix, base = 0, id
+  while saved[id] do
+    suffix = suffix + 1
+    id = base .. "|" .. string.format("%06d", suffix)
+  end
+  saved[id] = snapshot
+end
+
+local function pruneSnapshots()
+  local saved = ns.db.sellerScans
+
+  local kept = {}
+  for id, scan in pairs(saved) do
+    if time() - scan.scannedAt > MAX_AGE then
+      saved[id] = nil
+    else
+      kept[#kept + 1] = { id = id, at = scan.scannedAt, offers = #scan.offers }
+    end
+  end
+  table.sort(kept, function(a, b)
+    if a.at == b.at then return a.id > b.id end
+    return a.at > b.at
+  end)
+  local totalOffers = 0
+  for index, entry in ipairs(kept) do
+    totalOffers = totalOffers + entry.offers
+    if index > MAX_SNAPSHOTS or totalOffers > MAX_SAVED_OFFERS then
+      saved[entry.id] = nil
+    end
+  end
 end
 
 local function capture(item, commodity)
@@ -64,35 +99,8 @@ local function capture(item, commodity)
     realm = identity.realm, faction = identity.faction, itemKey = key,
     scannedAt = time(), offers = offers,
   }
-  local saved = ns.db.sellerScans
-  local id = identity.realm .. "|" .. identity.faction .. "|" .. key .. "|" .. snapshot.scannedAt
-  -- Keep distinct observations made in the same second as well.
-  local suffix = 0
-  local base = id
-  while saved[id] do
-    suffix = suffix + 1
-    id = base .. "|" .. string.format("%06d", suffix)
-  end
-  saved[id] = snapshot
-  local kept = {}
-  for id, scan in pairs(saved) do
-    if time() - scan.scannedAt > MAX_AGE then
-      saved[id] = nil
-    else
-      kept[#kept + 1] = { id = id, at = scan.scannedAt, offers = #scan.offers }
-    end
-  end
-  table.sort(kept, function(a, b)
-    if a.at == b.at then return a.id > b.id end
-    return a.at > b.at
-  end)
-  local totalOffers = 0
-  for index, entry in ipairs(kept) do
-    totalOffers = totalOffers + entry.offers
-    if index > MAX_SNAPSHOTS or totalOffers > MAX_SAVED_OFFERS then
-      saved[entry.id] = nil
-    end
-  end
+  saveSnapshot(snapshot)
+  pruneSnapshots()
 end
 
 for _, event in ipairs({ "ITEM_SEARCH_RESULTS_UPDATED", "ITEM_SEARCH_RESULTS_ADDED",
@@ -114,4 +122,56 @@ frame:SetScript("OnEvent", function(_, event, item)
       capture(item, commodity)
     end
   end)
+end)
+
+
+ns.Scanner.Subscribe(function(kind, scan)
+  if kind ~= "done" or not scan.orderBooks or not ns.db then return end
+  local books, skipped = 0, 0
+  local seen = {}
+  for key, listings in pairs(scan.orderBooks) do
+    if not scan.incompleteItems[ns.Codec.BaseID(key)] then
+      local grouped, offers = {}, {}
+      for _, listing in ipairs(listings) do
+        local owner = listing.owner or ""
+        if owner == "player" then owner = scan.by .. "-" .. scan.realm end
+        grouped[listing.price] = grouped[listing.price] or {}
+        local row = grouped[listing.price][owner]
+        if not row then
+          row = { unitPrice = listing.price, quantity = 0,
+            owners = owner ~= "" and { owner } or {}, totalOwners = owner ~= "" and 1 or 0 }
+          grouped[listing.price][owner] = row
+          offers[#offers + 1] = row
+        end
+        row.quantity = row.quantity + listing.count
+      end
+      if #offers <= MAX_OFFERS then
+        saveSnapshot({ realm = scan.realm, faction = scan.faction, itemKey = key,
+          scannedAt = scan.at, offers = offers })
+        books, seen[key] = books + 1, true
+      else
+        skipped = skipped + 1
+      end
+    else
+      skipped = skipped + 1
+    end
+  end
+  -- Only a scan without unresolved listings can establish that an item disappeared.
+  if scan.skipped == 0 then
+    local absent = {}
+    for _, old in pairs(ns.db.sellerScans) do
+      if old.realm == scan.realm and old.faction == scan.faction
+        and not scan.orderBooks[old.itemKey] and not seen[old.itemKey] then
+        absent[old.itemKey] = true
+      end
+    end
+    for key in pairs(absent) do
+      saveSnapshot({ realm = scan.realm, faction = scan.faction, itemKey = key,
+        scannedAt = scan.at, offers = {} })
+      books = books + 1
+    end
+  end
+  pruneSnapshots()
+  scan.bookCount, scan.bookSkipped = books, skipped
+  scan.orderBooks, scan.incompleteItems = nil, nil
 end)

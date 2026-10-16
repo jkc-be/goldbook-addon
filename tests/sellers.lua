@@ -88,13 +88,13 @@ ns.db.sellerScans["Faramon|Horde|legacy"] = { scannedAt = time(), offers = {} }
 search()
 assert(ns.db.sellerScans["Faramon|Horde|legacy"], "legacy snapshots must survive")
 ns.db.sellerScans.stale = { scannedAt = time() - 15 * 24 * 3600, offers = {} }
-for i = 1, 510 do
+for i = 1, 10010 do
   ns.db.sellerScans["old" .. i] = { scannedAt = time() - 1, offers = {} }
 end
 search()
 local retained = 0
 for _ in pairs(ns.db.sellerScans) do retained = retained + 1 end
-assert(retained == 500 and not ns.db.sellerScans.stale, "capture must bound snapshot count and age")
+assert(retained == 10000 and not ns.db.sellerScans.stale, "capture must bound snapshot count and age")
 ns.db.sellerScans = {}
 local manyOffers = {}
 for i = 1, 50000 do manyOffers[i] = {} end

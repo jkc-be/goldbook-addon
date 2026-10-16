@@ -56,12 +56,26 @@ The app uploads only a hash of the key. Anyone with the ID and the key sees
 the gold, bags and bank of your characters, so keep the key to yourself. The
 address `/gb web` shows is `X-Website` in `Goldbook.toc`.
 
+## Share order books and compare prices
+
+With version 0.1.12 or later, run `/gb scan full` at the auction house to
+record buyout prices, quantities and available seller names for each resolved
+item. Keep the desktop app running and type `/reload` or log out to upload
+the books. A complete item search also records its book. `/gb status` shows
+how many snapshots are saved locally.
+
+On the website, select an item in **Prices** to see its price ladder,
+cumulative sell-side depth and earlier observations. Use **Compare** beside
+Copper Ore and Copper Bar, for example, to plot both price histories together.
+Old price summaries cannot supply an order book; collect a new full scan.
+These are recorded sell listings, not a live feed or standing buy orders.
+
 ## Use
 
 | Action | Result |
 |---|---|
 | Left click **Goldbook scan**, or `/gb scan` | Quick scan: lowest price and quantity per item |
-| Right click **Goldbook scan**, or `/gb scan full` | Full scan: every auction, adds a market value |
+| Right click **Goldbook scan**, or `/gb scan full` | Full scan: every auction, adds market values and order books |
 | `/gb deals` | What is listed right now below its resale or vendor value |
 | `/gb sell` | Your bags: what to auction, at what price, and what to vendor instead |
 | `/gb movers` | The prices that rose and fell most since the day before |
@@ -84,6 +98,7 @@ The tests run the addon against a simulated client with
 luajit tests/run.lua
 luajit tests/scanner.lua
 luajit tests/sellers.lua
+luajit tests/orderbook.lua
 luajit tests/professions.lua
 luajit tests/trades.lua
 ```
