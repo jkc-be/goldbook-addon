@@ -29,7 +29,7 @@ addon, keeps it up to date, and syncs it with the website.
 
 Download the attached `Goldbook-<version>.zip` from
 [Releases](https://github.com/jkc-be/goldbook-addon/releases/latest). Use that
-same ZIP when uploading to CurseForge. It contains `Goldbook/Goldbook.toc`
+same ZIP for manual installs. It contains `Goldbook/Goldbook.toc`
 directly. The automatic **Source code (zip)** download wraps the files in
 `goldbook-addon-<tag>` and is not an installable addon package.
 
@@ -86,16 +86,18 @@ These are recorded sell listings, not a live feed or standing buy orders.
 | Right click **Goldbook scan**, or `/gb scan full` | Full scan: every auction, adds market values and order books |
 | `/gb deals` | What is listed right now below its resale or vendor value |
 | `/gb sell` | Your bags: what to auction, at what price, and what to vendor instead |
-| `/gb movers` | The prices that rose and fell most since the day before |
-| `/gb gold` | Gold per character, gains, a 30 day chart and net worth |
-| `/gb trades` | Your auction house sales and purchases and your sales to vendors |
-| Alt+click an item, or `/gb item <link or name>` | The item's price history |
+| `/gb movers` | The prices that rose most since the day before; **Fallers** lists those that fell |
+| `/gb gold` | Gold per character, gains, net worth, a chart over a week, a month or two months, and this month's trades |
+| `/gb trades` | Your auction house sales and purchases and your sales to vendors, with their totals |
+| Alt+click an item, or `/gb item <link or name>` | The item's price history. **Back to Prices** returns to the list it was opened from |
 | `/gb show [text]`, or left click the minimap button | Price list, filtered by item name |
 | `/gb autoscan` | A quick scan each time the auction house opens, at most every 15 minutes |
 | `/gb minprofit <gold>` | The profit a resale deal must make |
 | `/gb status` | The addon's version, items priced and scans waiting for sync |
 | `/gb web` | The website's address, and the ID and key that log you in to its character pages |
 | `/gb minimap` | Hides or shows the minimap button |
+| `/gb theme dark`, `/gb theme light`, or the half-filled ring by the window's close button | Draws the window in dark ink, the default, or on light parchment |
+| `/gb scale <0.7-1.4>`, or the slider in Options > AddOns > Goldbook | Sizes the window, apart from the game's UI scale. 1 is its normal size |
 
 ## Build a release ZIP
 
@@ -107,6 +109,35 @@ The packaging command checks that the TOC's files are present and produces
 `dist/Goldbook-<version>.zip`. The release workflow tests and packages each
 mirror update. Existing release assets are immutable; change the version in
 `Goldbook.toc` upstream before publishing different addon code.
+
+## Publish to CurseForge
+
+After a mirror update, **Package addon release** tests the addon and publishes
+the installable ZIP to GitHub. Approve its `curseforge` job to upload that exact
+ZIP to [Goldbook on CurseForge](https://www.curseforge.com/wow/addons/goldbook),
+project `1747971`. The upload uses the
+[CurseForge Upload API](https://support.curseforge.com/support/solutions/articles/9000197321-curseforge-api).
+The game version comes from `Goldbook.toc`; versions containing `alpha` or
+`beta` use the corresponding release type.
+
+The `CURSEFORGE_API_TOKEN` secret belongs in the protected `curseforge`
+environment, which accepts only `main` and requires approval by `jkc-be`.
+Keep repository-level secrets empty. The token is passed only to the upload
+step, in an HTTP header. The uploader does not print response bodies or
+network error details, and does not forward credentials through redirects.
+
+A successful upload adds `curseforge.json` to the GitHub release. It contains
+the public CurseForge file ID and the ZIP's SHA-256 hash. Later mirror updates
+skip an upload already recorded for the same ZIP. If the upload fails without
+a receipt, check the CurseForge files before retrying, since a lost response
+or a failed receipt upload can leave the file published. CurseForge may still
+need to approve a submitted file before it becomes public.
+
+The `.pkgmeta` file also describes the folder layout for CurseForge's
+[native packager](https://support.curseforge.com/support/solutions/articles/9000197281-automatic-packaging).
+It puts `Goldbook.toc` directly in `Goldbook/` and excludes development files.
+The workflow uploads the existing tested ZIP, so no packaging webhook is
+needed. Enabling both publishing methods can produce duplicate uploads.
 
 ## Test
 
@@ -120,6 +151,7 @@ luajit tests/sellers.lua
 luajit tests/orderbook.lua
 luajit tests/professions.lua
 luajit tests/trades.lua
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 ## License
