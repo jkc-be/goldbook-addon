@@ -855,7 +855,7 @@ eq(GoldbookWindow.shown, true, "window opens")
 eq(cells(1), "Linen Cloth | 1s 00c | 1s 05c | 100 | 3m ago", "price list shows the match")
 eq(cells(2), " |  |  |  | ", "price list shows only matches")
 eq(GoldbookWindow.rows[2].hit.shown, false, "empty rows cannot be clicked")
-eq(head(), "Prices |  | 1 item on Faramon-Horde", "the price list's title counts its items")
+eq(head(), "Prices |  | 1 item scanned on Faramon-Horde", "the price list's title counts its items")
 eq(GoldbookWindow.status.text, "Click an item to search the auction house · Alt+click for its history", "price list status")
 eq(GoldbookWindow.rows[1].spark.shown, true, "the price list draws the last 7 days of each item")
 eq(selectedTabs(), "prices", "the open view's tab is drawn selected and every tab stays clickable")
@@ -1137,7 +1137,7 @@ eq(GoldbookWindow.headers[1].text .. " " .. AuctionHouseFrame.SearchBar.searches
 Stub.alt = false
 GoldbookWindow.search.text = "silk"
 GoldbookWindow.search.scripts.OnTextChanged(GoldbookWindow.search, true)
-eq(GoldbookWindow.headers[1].text .. " " .. head(), "ITEM ↑ Prices |  | 0 items on Faramon-Horde", "typing a search leaves the item view for the price list")
+eq(GoldbookWindow.headers[1].text .. " " .. head(), "ITEM ↑ Prices |  | 0 items scanned on Faramon-Horde", "typing a search leaves the item view for the price list")
 
 for index = 1, 30 do
   GoldbookDB.items["900" .. index] = "1|Test Ore " .. index
@@ -1171,7 +1171,7 @@ ns.UI.ShowItem("9001")
 eq(GoldbookWindow.head.back.label.text .. " / " .. navigation(), "Back to Prices / Market: Prices Deals Movers",
   "an item opened with the window closed goes back to the price list, under Market")
 GoldbookWindow.head.back.scripts.OnClick(GoldbookWindow.head.back)
-eq(head(), "Prices |  | 30 items on Faramon-Horde", "and Back goes there")
+eq(head(), "Prices |  | 30 items scanned on Faramon-Horde", "and Back goes there")
 for index = 1, 30 do
   GoldbookDB.items["900" .. index], GoldbookDB.prices["Faramon-Horde"]["900" .. index] = nil, nil
 end
@@ -1205,7 +1205,7 @@ eq(cells(1), "Thu 09 Oct | 26s 00c |  | 2 | +4.0%", "the change from the day bef
 eq(cells(5), "Sun 05 Oct | 25s 00c |  | 4 | +4.2%", "the item view's chart and cards leave room for 5 rows")
 eq(cells(6), " |  |  |  | ", "rows under the chart stay empty")
 eq(GoldbookWindow.rows[1].cells[5].text .. " " .. GoldbookWindow.rows[3].cells[5].text .. " " .. GoldbookWindow.rows[4].cells[5].text,
-  "|cff5fd35a+4.0%|r 0.0% |cffff6d5a-4.0%|r", "a gain is green, a loss red, no change plain")
+  "|cff5fd35a+4.0%|r 0.0% |cffff8c7d-4.0%|r", "a gain is green, a loss red, no change plain")
 eq(tostring(GoldbookWindow.rows[1].rule.shown) .. " " .. tostring(GoldbookWindow.rows[5].rule.shown) .. " " .. tostring(GoldbookWindow.rows[6].rule.shown),
   "true true false", "every filled row is ruled off")
 local thumb = GoldbookWindow.scroll.thumb
@@ -1312,6 +1312,37 @@ for _, theme in ipairs({ "light", "dark" }) do
   end
 end
 
+-- A row under the pointer draws the gold over the panel at the palette's
+-- hover strength, and a selected row on the website at 16%; the row's text
+-- keeps its contrast on both.
+local ROW_TEXT = { text = 7, muted = 4.5, goldhi = 4.5, gain = 4.5, loss = 4.5, warn = 4.5, info = 4.5,
+  ["coins.gold"] = 4.5, ["coins.silver"] = 4.5, ["coins.copper"] = 4.5 }
+for quality = 0, 7 do
+  ROW_TEXT["quality." .. quality] = 4.5
+end
+for _, theme in ipairs({ "light", "dark" }) do
+  local palette = ns.UI.Palettes[theme]
+  local function hex(key)
+    local group, member = key:match("^(%a+)%.(%w+)$")
+    return group and palette[group][tonumber(member) or member] or palette[key]
+  end
+  for name, alpha in pairs({ hovered = palette.hover, selected = 0.16 }) do
+    local row = ""
+    for index = 1, 3 do
+      local below = tonumber(palette.panel:sub(index * 2 - 1, index * 2), 16)
+      local above = tonumber(palette.gold:sub(index * 2 - 1, index * 2), 16)
+      row = row .. ("%02x"):format(math.floor(below + (above - below) * alpha + 0.5))
+    end
+    for key, need in pairs(ROW_TEXT) do
+      for transferName, transfer in pairs(TRANSFERS) do
+        local a, b = luminance(hex(key), transfer), luminance(row, transfer)
+        local ratio = (math.max(a, b) + 0.05) / (math.min(a, b) + 0.05)
+        eq(ratio >= need, true, ("%s %s on a %s row %s: %.2f:1, needs %.1f:1"):format(theme, key, name, transferName, ratio, need))
+      end
+    end
+  end
+end
+
 -- In game, rail icons drawn from strokes of about 2 lost them; 4 draws.
 local shortest, strokes = math.huge, 0
 for _, entry in pairs(GoldbookWindow.hubs) do
@@ -1320,13 +1351,13 @@ for _, entry in pairs(GoldbookWindow.hubs) do
     shortest, strokes = math.min(shortest, math.sqrt((to[3] - from[3]) ^ 2 + (to[4] - from[4]) ^ 2)), strokes + 1
   end
 end
-eq(("%d strokes, the shortest %.1f"):format(strokes, shortest), "20 strokes, the shortest 4.0", "every rail icon stroke is long enough for the client to draw")
+eq(("%d strokes, the shortest %.1f"):format(strokes, shortest), "21 strokes, the shortest 4.0", "every rail icon stroke is long enough for the client to draw")
 
 eq(ns.UI.Theme(), "dark", "the window starts dark")
 SlashCmdList.GOLDBOOK("theme light")
 eq(lastPrint() .. " " .. GoldbookDB.settings.theme, "Goldbook The window is light. Change it with /gb theme light or /gb theme dark. light",
   "/gb theme light switches the window and keeps the choice")
-eq(("%.2f %s"):format(GoldbookWindow.version.textColor[1], GoldbookWindow.head.tags[1].label.text:sub(1, 10)), "0.31 |cff4e412d",
+eq(("%.2f %s"):format(GoldbookWindow.version.textColor[1], GoldbookWindow.head.tags[1].label.text:sub(1, 10)), "0.25 |cff41362c",
   "the frames already drawn are painted again, and the view redrawn, in the light palette")
 SlashCmdList.GOLDBOOK("theme sepia")
 eq(plain(Stub.printed[#Stub.printed - 1]) .. " / " .. lastPrint(),
@@ -1345,7 +1376,7 @@ eq(("%s %.2f %s / %s"):format(GoldbookDB.settings.theme, GoldbookWindow.version.
   "dark 0.67 false / Light window", "the theme button draws the window dark, the options follow, and its tooltip offers light again")
 options.checks.light.checked = true
 options.checks.light.scripts.OnClick(options.checks.light)
-eq(("%s %.2f"):format(GoldbookDB.settings.theme, GoldbookWindow.version.textColor[1]), "light 0.31", "the options switch to parchment")
+eq(("%s %.2f"):format(GoldbookDB.settings.theme, GoldbookWindow.version.textColor[1]), "light 0.25", "the options switch to parchment")
 SlashCmdList.GOLDBOOK("theme dark")
 eq(tostring(options.checks.light.checked), "false", "/gb theme dark unticks the options' light box")
 UIParent.width, UIParent.height = 1280, 768

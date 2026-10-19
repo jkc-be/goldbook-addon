@@ -56,24 +56,24 @@ local BACKDROP = { bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 }
 -- that transfer.
 local PALETTES = {
   light = {
-    bg = "f0e4c4", rail = "e2cc96", panel = "fcf7e8", line = "b19c70", edge = "a08a5c", field = "fffbf0",
-    text = "211a10", muted = "4e412d", railText = "3a2e1c", gold = "8a5a06", goldhi = "684202", brand = "80520a",
-    on = "e2cd92", gain = "0f5214", loss = "8e1a10", warn = "803100", info = "003ea1",
-    titleTop = "e4cf98", titleBottom = "d2b574",
-    buttonTop = "eed59a", buttonBottom = "d8b464", buttonEdge = "8a6a24", buttonText = "2a1e04",
-    hover = 0.14, area = 0.65, bar = 1, second = "464650",
-    coins = { gold = "674800", silver = "464650", copper = "843114" },
-    quality = { [0] = "4d4d4d", "211a10", "0e5208", "003ea1", "671da1", "803100", "57420c", "004a63" },
+    bg = "b0aaa0", rail = "aaa397", panel = "b8b4ac", line = "9b9281", edge = "877a64", field = "bcbab6",
+    text = "170f09", muted = "41362c", railText = "1f160e", gold = "673f00", goldhi = "4d2c00", brand = "5d3800",
+    on = "a69c87", gain = "0c4210", loss = "71140d", warn = "632600", info = "003384",
+    titleTop = "aaa397", titleBottom = "a7a092",
+    buttonTop = "b8b4ac", buttonBottom = "b1aa9e", buttonEdge = "7f643a", buttonText = "170f09",
+    hover = 0.1, area = 0.65, bar = 1, second = "464650",
+    coins = { gold = "4b3400", silver = "383840", copper = "63250f" },
+    quality = { [0] = "383838", "170f09", "0b4206", "003384", "531781", "632600", "47360a", "003d52" },
   },
   dark = {
     bg = "120f0b", rail = "191510", panel = "1d1914", line = "3a3123", edge = "54472f", field = "0d0b08",
     text = "f2ebdd", muted = "ab9f89", railText = "d8cdb6", gold = "e9b949", goldhi = "ffe08a", brand = "ecb94a",
-    on = "3a2d14", gain = "5fd35a", loss = "ff6d5a", warn = "ff8000", info = "3d9bff",
+    on = "3a2d14", gain = "5fd35a", loss = "ff8c7d", warn = "ff9121", info = "4da3ff",
     titleTop = "2c2418", titleBottom = "221c13",
     buttonTop = "3a2d14", buttonBottom = "261d0d", buttonEdge = "8a6a24", buttonText = "ffe08a",
     hover = 0.08, area = 0.42, bar = 0.6, second = "c7c7cf",
     coins = { gold = "ffd34d", silver = "c7c7cf", copper = "eda55f" },
-    quality = { [0] = "a3a3a3", "f3eee4", "1eff00", "3d9bff", "c27df8", "ff8000", "e6cc80", "00ccff" },
+    quality = { [0] = "a3a3a3", "f3eee4", "1eff00", "4da3ff", "c584f8", "ff9121", "e6cc80", "00ccff" },
   },
 }
 UI.Palettes = PALETTES
@@ -250,8 +250,8 @@ end
 -- client leaves out lines much shorter than 4, so curves are a few long
 -- strokes rather than many short ones.
 local GLYPHS = {
-  tag = { { 2, 8, 8, 2, 14, 2, 14, 8, 8, 14, 2, 8 } },
-  bag = { { 3, 5, 13, 5, 12, 14, 4, 14, 3, 5 }, { 4.5, 5, 5.5, 0.8, 10.5, 0.8, 11.5, 5 } },
+  chart = { { 2, 2, 2, 14, 14, 14 }, { 4, 11, 7, 6, 10, 9, 14, 3 } },
+  chest = { { 2, 7, 14, 7, 14, 14, 2, 14, 2, 7 }, { 2, 7, 4, 2.5, 12, 2.5, 14, 7 }, { 8, 7, 8, 11 } },
   scales = { { 8, 2, 8, 14 }, { 3, 5, 13, 5 }, { 3, 5, 1, 10, 5, 10, 3, 5 }, { 13, 5, 11, 10, 15, 10, 13, 5 } },
 }
 
@@ -623,7 +623,7 @@ local VIEWS = {
         tint("muted", Codec.Age(time() - row.seen))
     end,
     head = function(rows)
-      return { sub = plural(#rows, "item") .. " on " .. ns.RealmKey() }
+      return { sub = plural(#rows, "item") .. " scanned on " .. ns.RealmKey() }
     end,
     status = function(rows, visible)
       return joinedStatus(scrollRange(rows, visible), "Click an item to search the auction house", itemHint())
@@ -948,8 +948,8 @@ local VIEWS = {
 -- The rail's hubs, top to bottom, each with the views its tabs open, in
 -- order. Each view listed gets its `hub`; the item view has none.
 local HUBS = {
-  { key = "market", label = "Market", icon = "tag", views = { "prices", "deals", "movers" } },
-  { key = "inventory", label = "Inventory", icon = "bag", views = { "bags", "mail" } },
+  { key = "market", label = "Market", icon = "chart", views = { "prices", "deals", "movers" } },
+  { key = "inventory", label = "Inventory", icon = "chest", views = { "bags", "mail" } },
   { key = "ledger", label = "Ledger", icon = "scales", views = { "gold", "accounting", "items" } },
 }
 for _, hub in ipairs(HUBS) do
@@ -985,7 +985,9 @@ local FILTERS = {
   end,
   quality = function()
     local options = { { nil, "All qualities" } }
-    for id, name in ipairs({ "Poor", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Artifact", "Heirloom" }) do
+    -- The qualities the auction house lists: legendaries are bound, and
+    -- Classic has no artifacts or heirlooms.
+    for id, name in ipairs({ "Poor", "Common", "Uncommon", "Rare", "Epic" }) do
       options[#options + 1] = { id - 1, name }
     end
     return options
@@ -1183,20 +1185,39 @@ local function showSegments(labels, on, onClick)
 end
 
 local function placeChips(definition)
+  -- The gap from a chip's label to the one before it, and the narrowest
+  -- the search box gets to leave room for the chips.
+  local CHIP_GAP, SEARCH_MIN = 17, 120
+  -- How far a chip reaches past the one before it: the gap, its label and
+  -- caret, and its padding of 9.
+  local function chipWidth(chip)
+    local width = CHIP_GAP + (chip.label:GetStringWidth() or 0) + 9
+    if chip.caret then
+      width = width + 5 + (chip.caret:GetStringWidth() or 0)
+    end
+    return width
+  end
   local toolbar, previous = window.filters, window.search
   for _, chip in pairs(toolbar.controls) do
     chip:SetShown(false)
   end
+  local used = 0
   for _, name in ipairs(definition.chips or {}) do
     local chip = toolbar.controls[name]
     chip:SetShown(true)
-    chip.label:SetPoint("LEFT", previous, "RIGHT", 17, 0)
+    chip.label:SetPoint("LEFT", previous, "RIGHT", CHIP_GAP, 0)
+    used = used + chipWidth(chip)
     previous = chip
   end
   local clear = toolbar.clear
   -- Segments on the toolbar take its room.
   clear:SetShown(filtered() and not definition.segmentsOnToolbar)
-  clear.label:SetPoint("LEFT", previous, "RIGHT", 17, 0)
+  clear.label:SetPoint("LEFT", previous, "RIGHT", CHIP_GAP, 0)
+  if clear:IsShown() then
+    used = used + chipWidth(clear)
+  end
+  -- The search box gives up width so that the last chip ends inside the page.
+  window.search:SetSize(math.max(SEARCH_MIN, math.min(SEARCH_WIDTH, PAGE_WIDTH - used)), TOOLBAR_HEIGHT)
 end
 
 local function chipLabels()
