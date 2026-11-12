@@ -113,9 +113,11 @@ pay(4320)
 eq(booked(), "", "gold spent at a merchant without a purchase waits for what explains it")
 Stub.advance(GRACE)
 eq(booked(), "repair Repairs nil 1 4320 nil", "and is a repair once nothing did")
+Stub.buyback[2] = { "Jagged Star of the Eagle", 1, 3100 }
+Stub.fire("MERCHANT_UPDATE")
 gain(3100)
 Stub.advance(GRACE)
-eq(booked() .. "|" .. accruing(), "|", "gold a merchant pays is left to the buyback list, which books the sale")
+eq(booked() .. "|" .. accruing(), "vendor Jagged Star of the Eagle nil 1 3100 nil|", "a sale in the buyback list is booked with the gold the merchant pays")
 Stub.items[4865] = { name = "Ruined Pelt", quality = 0, vendor = 5, cached = true }
 Stub.items[3300] = { name = "Rabbit's Foot", quality = 0, vendor = 4, cached = true }
 Stub.items[2589] = { name = "Linen Cloth", quality = 1, vendor = 13, cached = true }
@@ -135,8 +137,27 @@ pay(85)
 Stub.advance(GRACE)
 eq(booked() .. "|" .. accruing(), "|", "buying a sale back is not a repair, and its sale is taken off instead")
 Stub.fire("MERCHANT_CLOSED")
-eq(plain(Stub.printed[#Stub.printed]), "Goldbook Booked 2 vendor sales. Type /gb accounting.", "closing the merchant counts the junk among its sales")
-Stub.advance(GRACE * 3)
+eq(plain(Stub.printed[#Stub.printed]), "Goldbook Booked 3 vendor sales. Type /gb accounting.", "closing the merchant counts the junk among its sales")
+
+-- WoW Forever fills the buyback list over a moment after the merchant opens.
+-- What shows up late was sold before, and brings in no gold.
+Stub.buyback = { { "Broken Fang", 1, 85 } }
+Stub.fire("MERCHANT_SHOW")
+Stub.buyback = { { "Broken Fang", 1, 85 }, { "Light Bow", 1, 1184 }, { "Ceranium Rod", 1, 2322 } }
+Stub.fire("MERCHANT_UPDATE")
+Stub.buyback[4] = { "Stinging Viper", 1, 2793 }
+gain(2793)
+Stub.fire("MERCHANT_UPDATE")
+eq(booked(), "vendor Stinging Viper nil 1 2793 nil", "a sale whose gold comes before the buyback list is booked, not one that showed up late")
+Stub.buyback[5] = { "Melon Juice", 1, 25 }
+Stub.fire("MERCHANT_UPDATE")
+gain(25)
+eq(booked(), "vendor Melon Juice nil 1 25 nil", "a sale is booked with the gold it brings in")
+Stub.advance(GRACE)
+eq(booked() .. "|" .. accruing(), "|", "buyback entries that show up after the merchant opened are not sold again")
+Stub.fire("MERCHANT_CLOSED")
+eq(plain(Stub.printed[#Stub.printed]), "Goldbook Booked 2 vendor sales. Type /gb accounting.", "closing counts the sales the gold confirmed")
+Stub.advance(GRACE * 2)
 pay(20)
 Stub.advance(GRACE)
 eq(booked() .. "|" .. accruing(), "|otherOut 1 20", "a merchant closed for longer than the wait explains nothing")
@@ -352,6 +373,106 @@ eq(table.concat(options, ", "), "All sources, Vendor sale, Merchant purchase, Tr
 local eleventh = chip.menu.options[11]
 eq(table.concat({ chip.menu.width, chip.menu.height, eleventh.point[2], eleventh.point[3] }, " "), "400 228 201 -4",
   "twenty choices run in two columns of ten")
+
+-- Gold that pays two sales at once is booked once no other claim can still
+-- come, and the sales wait for it.
+Stub.fire("MERCHANT_SHOW")
+Stub.buyback[6] = { "Light Feather", 1, 7 }
+Stub.buyback[7] = { "Malachite", 1, 15 }
+Stub.fire("MERCHANT_UPDATE")
+Stub.advance(1)
+gain(22)
+Stub.advance(GRACE - 0.5)
+pay(3)
+Stub.advance(1)
+eq(booked(), "vendor Malachite nil 1 15 nil / vendor Light Feather nil 1 7 nil",
+  "two sales paid with one change of gold wait for it, also when other gold moves before it is booked")
+Stub.advance(GRACE)
+eq(booked(), "repair Repairs nil 1 3 nil", "and the other gold is booked on its own")
+-- Only gold a claim may explain keeps it waiting: a take the server refused
+-- does not hold back the same mail's next take.
+Stub.inbox.mails = { { sender = "Mirelle", subject = "Again", money = 100, daysLeft = 20, refuses = true } }
+TakeInboxMoney(1)
+Stub.advance(1)
+pay(5)
+Stub.advance(GRACE - 0.5)
+pay(5)
+Stub.advance(0.25)
+TakeInboxMoney(1)
+gain(100)
+eq(booked(), "mailIn Again nil 1 100 Mirelle", "a take tried again is booked, also while gold spent since a refused take waits")
+Stub.advance(GRACE)
+eq(booked(), "repair Repairs nil 1 5 nil / repair Repairs nil 1 5 nil", "and the gold spent is booked on its own")
+-- A sale bought back while the gold that paid it together with another
+-- still waits to be booked: that gold books nothing.
+local function sold(item)
+  local count = 0
+  for _, entry in ipairs(ns.db.trades["Sultan-Faramon"]) do
+    count = count + (entry.side == "vendor" and entry.item == item and 1 or 0)
+  end
+  return count
+end
+local listed = { unpack(Stub.buyback) }
+Stub.fire("MERCHANT_SHOW")
+Stub.buyback[#listed + 1] = { "Light Bow", 1, 100 }
+Stub.buyback[#listed + 2] = { "Ceranium Rod", 1, 200 }
+Stub.fire("MERCHANT_UPDATE")
+gain(300)
+Stub.advance(1)
+BuybackItem(#listed + 1)
+table.remove(Stub.buyback, #listed + 1)
+Stub.fire("MERCHANT_UPDATE")
+pay(100)
+Stub.advance(GRACE)
+eq(booked() .. "|" .. accruing(), "vendor Ceranium Rod nil 1 200 nil|otherIn 1 12",
+  "a sale bought back before the gold that paid it with another is booked is not booked")
+Stub.fire("MERCHANT_CLOSED")
+Stub.advance(GRACE * 2)
+-- What shows up in the buyback list after the merchant opened was sold
+-- before, so buying it back takes off that sale.
+Stub.buyback = { unpack(listed) }
+Stub.fire("MERCHANT_SHOW")
+Stub.buyback[#listed + 1] = { "Ceranium Rod", 1, 200 }
+Stub.fire("MERCHANT_UPDATE")
+Stub.advance(1)
+BuybackItem(#listed + 1)
+table.remove(Stub.buyback, #listed + 1)
+Stub.fire("MERCHANT_UPDATE")
+pay(200)
+Stub.advance(GRACE)
+eq(sold("Ceranium Rod") .. " " .. booked() .. "|" .. accruing(), "0 |otherIn 1 12",
+  "buying back what was sold at an earlier visit takes off its sale")
+Stub.fire("MERCHANT_CLOSED")
+-- Gold that pays other sales meanwhile does not keep that sale booked.
+Stub.advance(GRACE * 2)
+Stub.buyback = { unpack(listed, 1, #listed - 1) }
+Stub.fire("MERCHANT_SHOW")
+Stub.buyback[#listed] = { "Malachite", 1, 15 }
+Stub.buyback[#listed + 1] = { "Light Bow", 1, 100 }
+Stub.buyback[#listed + 2] = { "Ceranium Rod", 1, 200 }
+Stub.fire("MERCHANT_UPDATE")
+gain(300)
+Stub.advance(1)
+BuybackItem(#listed)
+table.remove(Stub.buyback, #listed)
+Stub.fire("MERCHANT_UPDATE")
+pay(15)
+Stub.advance(GRACE)
+eq(sold("Malachite") .. " " .. booked() .. "|" .. accruing(), "0 vendor Ceranium Rod nil 1 200 nil / vendor Light Bow nil 1 100 nil|otherIn 1 12",
+  "buying back what was sold at an earlier visit takes off its sale, also while gold for other sales waits")
+Stub.fire("MERCHANT_CLOSED")
+
+-- Logging out settles what still waits, as no claim or gold comes after.
+Stub.advance(GRACE * 2)
+Stub.fire("MERCHANT_SHOW")
+Stub.buyback[#Stub.buyback + 1] = { "Copper Ore", 1, 40 }
+Stub.buyback[#Stub.buyback + 1] = { "Tin Ore", 1, 60 }
+Stub.fire("MERCHANT_UPDATE")
+gain(100)
+Stub.advance(2)
+Stub.fire("PLAYER_LOGOUT")
+eq(booked(), "vendor Tin Ore nil 1 60 nil / vendor Copper Ore nil 1 40 nil", "logging out books two sales whose shared gold still waits")
+Stub.fire("MERCHANT_CLOSED")
 
 booked()
 Stub.fire("PLAYER_LOGOUT")

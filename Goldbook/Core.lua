@@ -358,11 +358,40 @@ end
 -- Vendor sales booked since the merchant opened, said once it closes.
 local vendorSales = 0
 
+local function vendorSaleBooked()
+  vendorSales = vendorSales + 1
+end
+
+-- A sale to a vendor of `count` of `item` for `price` in all, booked once
+-- gold comes in while the merchant is open: only gold of exactly its price
+-- when `exact`.
+local function claimVendorSale(item, key, count, price, exact)
+  ns.Accounting.Claim({ side = "vendor", sign = 1, amount = price, exact = exact, window = "merchant",
+    stacks = { { item = item, key = key, count = count } }, booked = vendorSaleBooked })
+end
+
+-- A sale bought back: the gold its claim still waits for books nothing, or
+-- else the sale is taken off the books.
+local function unsell(entry)
+  ns.Accounting.Unclaim(function(claim)
+    local stack = claim.side == "vendor" and claim.stacks[1]
+    return stack and stack.item == entry.item and stack.count == entry.count and claim.amount == entry.price
+  end, function()
+    if Trades.TakeOffSale(ns.db, characterKey(), entry) then
+      vendorSales = vendorSales - 1
+      ns.UI.RefreshSoon()
+    end
+  end)
+end
+
 local function bookVendorSales(opened)
-  local sold, undone = Trades.Merchant(ns.db, characterKey(), ns.RealmKey(), time(), GetMoney(), opened)
-  vendorSales = vendorSales + sold - undone
-  if sold + undone > 0 then
-    ns.UI.RefreshSoon()
+  local sales, gone = Trades.Merchant(ns.db, characterKey(), ns.RealmKey(), time(), GetMoney(), opened)
+  -- One sale is paid at a time; a buyback entry that showed up late pays nothing.
+  for _, sale in ipairs(sales) do
+    claimVendorSale(sale.item, sale.key, sale.count, sale.price, true)
+  end
+  for _, entry in ipairs(gone) do
+    unsell(entry)
   end
 end
 
@@ -373,7 +402,7 @@ local JUNK_QUALITY = 0
 -- the button is pressed, before the server takes the items: one sale per
 -- item, at what a vendor pays.
 local function bookJunk()
-  local now, realmKey, sales, byItem = time(), ns.RealmKey(), {}, {}
+  local realmKey, sales, byItem = ns.RealmKey(), {}, {}
   for _, container in ipairs(BAGS) do
     for slot = 1, C_Container.GetContainerNumSlots(container) do
       local info = C_Container.GetContainerItemInfo(container, slot)
@@ -383,7 +412,7 @@ local function bookJunk()
         local item = info.hyperlink:match("%[(.-)%]")
         local id = tostring(item) .. "|" .. tostring(key)
         if not byItem[id] then
-          byItem[id] = { at = now, side = "vendor", item = item, key = key, count = 0, price = 0 }
+          byItem[id] = { item = item, key = key, count = 0, price = 0 }
           sales[#sales + 1] = byItem[id]
         end
         byItem[id].count = byItem[id].count + info.stackCount
@@ -391,10 +420,8 @@ local function bookJunk()
       end
     end
   end
-  if #sales > 0 then
-    Trades.Add(ns.db, characterKey(), sales, now)
-    vendorSales = vendorSales + #sales
-    ns.UI.RefreshSoon()
+  for _, sale in ipairs(sales) do
+    claimVendorSale(sale.item, sale.key, sale.count, sale.price)
   end
 end
 

@@ -266,20 +266,19 @@ local function tally(entries)
   return counts, byId
 end
 
-local function vendorSale(entry, now)
-  return { at = now, side = "vendor", item = entry.item, key = entry.key, count = entry.count, price = entry.price, fee = 0 }
-end
-
 -- The buyback list as last read, tallied, and the gold then.
 local listed, listedById, listedMoney
 
 -- Called when a merchant opens, whenever its lists change, and when it
--- closes. An entry new to the buyback list is a sale to a vendor. An entry gone while nothing was added was
--- bought back, and its sale is taken off again; one gone as another came in
--- fell off the end of a full list. A full list that sold the same stack as
--- its oldest entry reads the same after, so then gold gained by exactly an
--- entry's price is that sale. Returns how many sales were booked and how many
--- were taken off.
+-- closes. An entry new to the buyback list may be a sale to a vendor; it is
+-- one only if the gold it paid comes in, see Accounting. WoW Forever fills
+-- the list over a moment after the merchant opens, so entries sold before
+-- show up as new too. An entry gone while nothing was added was bought back,
+-- and its sale is taken off again; one gone as another came in fell off the
+-- end of a full list. A full list that sold the same stack as its oldest
+-- entry reads the same after, so then gold gained by exactly an entry's
+-- price is that sale. Returns the entries that may be sales and those bought
+-- back, both as { item, key, count, price }; see Trades.TakeOffSale.
 function Trades.Merchant(db, character, realmKey, now, money, opened)
   local entries = buyback(db, realmKey)
   local counts, byId = tally(entries)
@@ -287,19 +286,18 @@ function Trades.Merchant(db, character, realmKey, now, money, opened)
   listed, listedById, listedMoney = counts, byId, money
   -- A list that was not read yet holds sales booked before a /reload.
   if opened or not before then
-    return 0, 0
+    return {}, {}
   end
   local booked = db.trades[character] or {}
   db.trades[character] = booked
-  local seen, sold = {}, 0
+  local seen, sales = {}, {}
   for _, entry in ipairs(entries) do
     seen[entry.id] = (seen[entry.id] or 0) + 1
     if seen[entry.id] > (before[entry.id] or 0) then
-      insert(booked, vendorSale(entry, now))
-      sold = sold + 1
+      sales[#sales + 1] = entry
     end
   end
-  local undone, changed = 0, sold > 0
+  local gone, changed = {}, #sales > 0
   for id, count in pairs(before) do
     changed = changed or count ~= (counts[id] or 0)
   end
@@ -308,29 +306,34 @@ function Trades.Merchant(db, character, realmKey, now, money, opened)
     for index = #entries, 1, -1 do
       local entry = entries[index]
       if entry.price == gained then
-        insert(booked, vendorSale(entry, now))
-        sold = 1
+        sales[1] = entry
         break
       end
     end
   end
-  if sold == 0 then
+  if #sales == 0 then
     for id, count in pairs(before) do
-      local gone = beforeById[id]
       for _ = 1, count - (counts[id] or 0) do
-        for index = #booked, 1, -1 do
-          local trade = booked[index]
-          if trade.side == "vendor" and trade.item == gone.item and trade.count == gone.count and trade.price == gone.price then
-            table.remove(booked, index)
-            undone = undone + 1
-            break
-          end
-        end
+        gone[#gone + 1] = beforeById[id]
       end
     end
   end
   prune(booked, now)
-  return sold, undone
+  return sales, gone
+end
+
+-- Takes off the vendor sale of `entry`'s stack booked last, for a buyback.
+-- Returns whether there was one.
+function Trades.TakeOffSale(db, character, entry)
+  local booked = db.trades[character] or {}
+  for index = #booked, 1, -1 do
+    local trade = booked[index]
+    if trade.side == "vendor" and trade.item == entry.item and trade.count == entry.count and trade.price == entry.price then
+      table.remove(booked, index)
+      return true
+    end
+  end
+  return false
 end
 
 -- Every entry, booked or still accruing, newest first, as the Accounting
