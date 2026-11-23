@@ -118,6 +118,28 @@ local function inBatches(list, each, done, from)
   end
 end
 
+-- Names rows of items that neither a scan nor the bags brought in, such as
+-- reagents, asking once a session for the name and vendor price of those
+-- not loaded yet.
+local asked = {}
+function ns.NameItems(rows)
+  local missing = {}
+  for _, row in ipairs(rows) do
+    if not asked[row.key] and unresolved(row.key) then
+      asked[row.key] = true
+      missing[#missing + 1] = row.key
+    end
+  end
+  if #missing > 0 then
+    inBatches(missing, resolveItem, ns.UI.RefreshSoon)
+  end
+  for _, row in ipairs(rows) do
+    local name, quality = Database.Item(ns.db, row.key)
+    row.name, row.quality = name or ("item " .. row.key), quality or 1
+  end
+  return rows
+end
+
 -- Unbound items in `containers` as { key, count }, one entry per item.
 local function heldItems(containers)
   local byKey, held, realmKey = {}, {}, ns.RealmKey()
@@ -244,6 +266,9 @@ local COMMANDS = {
   movers = function(argument)
     ns.UI.Show("movers", argument)
   end,
+  crafting = function(argument)
+    ns.UI.Show("crafting", argument)
+  end,
   mail = function(argument)
     ns.UI.Show("mail", argument)
   end,
@@ -325,7 +350,7 @@ SlashCmdList.GOLDBOOK = function(input)
   if run then
     run(argument)
   else
-    ns.Print("/gb ah  |  /gb scan  |  /gb scan full  |  /gb deals  |  /gb bags  |  /gb movers  |  /gb gold  |  /gb mail  |  /gb accounting  |  /gb items  |  /gb show [text]")
+    ns.Print("/gb ah  |  /gb scan  |  /gb scan full  |  /gb deals  |  /gb bags  |  /gb movers  |  /gb crafting  |  /gb gold  |  /gb mail  |  /gb accounting  |  /gb items  |  /gb show [text]")
     ns.Print("/gb item <link or name>  |  /gb minprofit <gold>  |  /gb autoscan")
     ns.Print("/gb status  |  /gb minimap  |  /gb web  |  /gb theme light|dark  |  /gb scale <0.7-1.4>")
   end
@@ -515,6 +540,25 @@ local function autoScan()
   end)
 end
 
+-- A client that names no realm files under the one Database.RecordedRealm
+-- finds for the character, and what it filed under none moves there.
+local function resolveRealm()
+  Scanner.recordedRealm = nil
+  if Scanner.Realm() == "" then
+    local name = UnitName("player")
+    Scanner.recordedRealm = Database.RecordedRealm(ns.db, name, Scanner.House())
+    if Scanner.recordedRealm ~= "" then
+      local faction = Scanner.Identity().faction
+      Database.MoveBlankRealm(ns.db, name, faction, Scanner.recordedRealm, time())
+      -- The app fetches server prices for the keys of `prices` as they are,
+      -- but strips the spaces from a character's realm, which breaks a house
+      -- name such as "EU PvE".
+      local key = Database.RealmKey(Scanner.recordedRealm, faction)
+      ns.db.prices[key] = ns.db.prices[key] or {}
+    end
+  end
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
@@ -532,6 +576,7 @@ frame:SetScript("OnEvent", function(_, event, first, second)
       ns.Print("Took " .. plural(taken, "newer price") .. " from the Goldbook server.")
     end
   elseif event == "PLAYER_LOGIN" then
+    resolveRealm()
     -- Before login the normalized realm name may be unknown, and gold booked
     -- under the display name would count the character twice.
     loginIdentity = Scanner.Identity()
@@ -549,6 +594,9 @@ frame:SetScript("OnEvent", function(_, event, first, second)
     end
     inBatches(stored, refreshVendorPrice, ns.UI.RefreshSoon)
     ns.Print(ns.VERSION .. " loaded. Type /gb for commands.")
+    if loginIdentity.realm == "" then
+      ns.Print("The game gives no realm name, so Goldbook cannot tell which auction house this is and shows no prices.")
+    end
   elseif event == "PLAYER_MONEY" then
     recordGold()
     ns.UI.RefreshSoon()
